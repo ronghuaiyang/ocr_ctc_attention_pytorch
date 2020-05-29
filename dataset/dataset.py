@@ -11,6 +11,63 @@ import numpy as np
 from PIL import Image, ImageFilter
 import random
 
+class GaussianBlur(object):
+
+    def __init__(self, kernal_size, sigma, p=0.5):
+        if kernal_size < 1:
+            raise ValueError("kernal_size must be positive integer.")
+        self.kernal_size = kernal_sizes
+        self.simga = sigma
+        self.p = p
+
+    @staticmethod
+    def get_params(kernel_size, sigma):
+        kernel_size = random.randint(2, kernel_size)
+        sigma = random.uniform(1, sigma)
+        return kernel_size, sigma
+
+    def get_gaussian_filter(kernel_size, sigma, channels):
+        # Create a x, y coordinate grid of shape (kernel_size, kernel_size, 2)
+        x_cord = torch.arange(kernel_size)
+        x_grid = x_cord.repeat(kernel_size).view(kernel_size, kernel_size)
+        y_grid = x_grid.t()
+        xy_grid = torch.stack([x_grid, y_grid], dim=-1)
+
+        mean = (kernel_size - 1)/2.
+        variance = sigma**2.
+
+        # Calculate the 2-dimensional gaussian kernel which is
+        # the product of two gaussian distributions for two different
+        # variables (in this case called x and y)
+        gaussian_kernel = (1./(2.*math.pi*variance)) *\
+                        torch.exp(
+                            -torch.sum((xy_grid - mean)**2., dim=-1) /\
+                            (2*variance)
+                        )
+        # Make sure sum of values in gaussian kernel equals 1.
+        gaussian_kernel = gaussian_kernel / torch.sum(gaussian_kernel)
+
+        # Reshape to 2d depthwise convolutional weight
+        gaussian_kernel = gaussian_kernel.view(1, 1, kernel_size, kernel_size)
+        gaussian_kernel = gaussian_kernel.repeat(channels, 1, 1, 1)
+
+        gaussian_filter = nn.Conv2d(in_channels=channels, out_channels=channels,
+                                    kernel_size=kernel_size, groups=channels, bias=False)
+
+        gaussian_filter.weight.data = gaussian_kernel
+        gaussian_filter.weight.requires_grad = False
+        return gaussian_filter
+ 
+    def __call__(self, img):
+        if random.random() < p:
+            return img
+
+        kernal_size, sigma = get_params(self.kernal_size, self.sigma)
+        gaussian_filter = get_gaussian_filter(kernal_size, sigma, channels=1)
+        with torch.no_grad():
+            img = gaussian_filter(img)
+        return img     
+
 
 class TextRecDataset(data.Dataset):
 
@@ -44,6 +101,7 @@ class TextRecDataset(data.Dataset):
         if self.phase == 'train':
             self.idx = self.idx[:self.num_split]
             self.transform = T.Compose([T.ToTensor(),
+                                        T.ColorJitter(0.2,0.2,0.2,.02),                                        
                                         # T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
                                         T.Normalize(mean=[0.5], std=[0.5])
 

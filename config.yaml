@@ -12,3 +12,4 @@ test_label_file: '/data1/code/data/test_real.txt'
 save_path: 'checkpoints/0527'
 print_freq: 10
 save_freq: 100
+test_freq: 100
