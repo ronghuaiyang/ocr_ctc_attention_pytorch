@@ -1,0 +1,14 @@
+use_gpu: true
+gpu_id: 0
+batch_size: 32
+epochs: 800
+img_shape: [32, 400]
+max_string_len: 30
+char_set: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ -"
+train_data_path: '/data1/code/data/train/'
+train_label_file: '/data1/code/data/train_real.txt'
+test_data_path: '/data1/code/data/test/'
+test_label_file: '/data1/code/data/test_real.txt'
+save_path: 'checkpoints/0527'
+print_freq: 10
+save_freq: 100
