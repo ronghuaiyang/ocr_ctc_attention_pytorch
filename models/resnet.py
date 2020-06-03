@@ -309,11 +309,11 @@ class OCRResNetHead(nn.Module):
         # print(x.size())
 
         x = self.layer1(x)
-        x = self.maxpool2(x)
+        x = self.maxpool1(x)
         # print(x.size())
 
         x = self.layer2(x)
-        x = self.maxpool2(x)
+        x = self.maxpool1(x)
         # print(x.size())
 
         x = self.layer3(x)
