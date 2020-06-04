@@ -37,11 +37,11 @@ class CRNN(nn.Module):
         #                     num_layers=2,
         #                     dropout=0.5,
         #                     bidirectional=True)
-        # self.rnn = nn.GRU(input_size=512,
-        #                     hidden_size=256,
-        #                     num_layers=2,
-        #                     dropout=0.5,
-        #                     bidirectional=True)
+        self.rnn = nn.GRU(input_size=512,
+                            hidden_size=256,
+                            num_layers=1,
+                            dropout=0.5,
+                            bidirectional=False)
         # self.transform = nn.Transformer(d_model=512,
         #                                 nhead=8,
         #                                 num_encoder_layers=1,
@@ -95,10 +95,14 @@ class CRNN(nn.Module):
 
         # ncw->wnc w:t
         x = x.permute(2, 0, 1)
-        x = F.relu(self.fc(x))
+
+        # x = F.relu(self.fc(x))
+        # h_enc, h_dec = x, x[-1]
         # print(x.size())
 
-        h_enc, h_dec = x, x[-1]
+        h_enc, h_dec = self.rnn(x)
+        h_dec = h_dec.squeeze(0)
+        # print(h_enc.size(), h_dec.size())
 
         outputs = self.decoder(h_enc, h_dec, labels, teacher_forcing_ratio)
 

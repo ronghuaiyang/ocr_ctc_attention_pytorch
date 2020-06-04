@@ -1,6 +1,6 @@
 use_gpu: true
 gpu_id: 0
-batch_size: 2
+batch_size: 32
 epochs: 2000
 img_shape: [32, 400]
 max_string_len: 30

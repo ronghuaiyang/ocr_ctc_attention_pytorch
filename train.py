@@ -139,7 +139,7 @@ def main():
     print(torch.__version__)
 
     with open('config.yaml') as f:
-        config = yaml.load(f)
+        config = yaml.load(f, Loader=yaml.FullLoader)
     print(torch.cuda.is_available())
     torch.backends.cudnn.benchmark = True
 
@@ -196,14 +196,17 @@ def main():
         start = time.time()
         model.train()
         for j, batch in enumerate(trainloader):
-            print(i, j)
+
             iter_cnt += 1
             imgs = batch[0].cuda()
             labels = batch[1].cuda().long()
             labels_length = batch[2]
             labels_mask = batch[4].cuda().float()
+            # imgs = batch[0]
+            # labels = batch[1].long()
+            # labels_length = batch[2]
+            # labels_mask = batch[4].float()
 
-            optimizer.zero_grad()
 
             # print(labels)
 
@@ -227,9 +230,10 @@ def main():
             # print(labels)
             # print(outputs, outputs.size())
             # print(labels_mask)
-            
-            loss.backward()
 
+            optimizer.zero_grad()            
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
             optimizer.step()
 
             if iter_cnt % config['print_freq'] == 0:

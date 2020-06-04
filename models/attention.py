@@ -31,8 +31,7 @@ class Attention(nn.Module):
 
         query = query.unsqueeze(dim=-2)
         keys = keys.unsqueeze(dim=-1)
-
-        e = torch.matmul(query, keys).squeeze()
+        e = torch.matmul(query, keys).squeeze(-1)
         # print(e.size(), query.size(), keys.size())
       
         att_weights = F.softmax(e, dim=0)              #[b, src_seq_len]
@@ -60,8 +59,10 @@ class AttentionDecoder(nn.Module):
         self.attention = Attention(enc_hidden_size=enc_hidden_size,
                                    dec_hidden_size=dec_hidden_size,
                                    hidden_size=att_hidden_size)
-        self.embeddings = nn.Embedding(num_embeddings=len(char2idx), embedding_dim=dec_hidden_size).cuda()
+        self.emb_dim = dec_hidden_size
+        self.embeddings = nn.Embedding(num_embeddings=len(char2idx), embedding_dim=dec_hidden_size)
         self.classifier = nn.Linear(dec_hidden_size, self.class_num)
+        self.sos_emb = torch.tensor(char2idx['sos']).cuda()
 
     def forward(self, hidden_enc,
                       hidden_dec,
@@ -74,11 +75,12 @@ class AttentionDecoder(nn.Module):
         max_len = labels.size(0)
         batch_size = labels.size(1)
         outputs = torch.zeros(max_len, batch_size, self.class_num).cuda()
-        dec_input = self.embeddings(torch.zeros(batch_size).long().cuda() + self.char2idx['sos'])
+        dec_input = self.embeddings(self.sos_emb.expand(batch_size, ))
+        # dec_input = self.embeddings(torch.zeros(batch_size).long().cuda() + self.char2idx['sos'])
         for i in range(max_len):
-            att_weights = self.attention(hidden_enc, hidden_dec).unsqueeze(dim=2)
+            att_weights = self.attention(hidden_enc, hidden_dec)
             c = torch.mul(att_weights, hidden_enc).sum(dim=0)
-            # print('dec_input', labels[i].size(), target.size(), c.size())
+            # print('dec_input', labels[i].size(), dec_input.size(), c.size())
             dec_input = torch.cat((dec_input, c), dim=1)
             hidden_dec = self.decoder(dec_input, hidden_dec)
             # print('hidden_dec', hidden_dec.size())

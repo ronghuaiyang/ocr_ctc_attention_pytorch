@@ -42,8 +42,8 @@ def get_char_dict(char_set):
         char2idx[char] = i+1
         idx2char[i+1] = char
     # char_dict['eos'] = i+2
-    char2idx['sos'], char2idx['pad'] = i+2, i+3
-    idx2char[i+2], idx2char[i+3] = 'sos', 'pad'
+    char2idx['sos'] = i+2
+    idx2char[i+2] = 'sos'
 
     return char2idx, idx2char
 
@@ -247,7 +247,7 @@ class TextRecDataset(data.Dataset):
         char2idx = self.config['char2idx']
         for label in self.labels_str:
 
-            label_idx = np.zeros(self.config['max_string_len']) + char2idx['pad']
+            label_idx = np.zeros(self.config['max_string_len']) + char2idx['eos']
             label_mask = np.zeros(self.config['max_string_len'])
 
             # label_idx[0] = char2idx['sos']
