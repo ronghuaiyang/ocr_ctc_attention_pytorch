@@ -12,12 +12,13 @@ import yaml
 from multiprocessing import cpu_count
 import Levenshtein
 
-from dataset.dataset import TextRecDataset, get_char_dict
+from dataset.dataset import TextRecDataset, get_char_dict_attention, get_char_dict_ctc
 from models.crnn import CRNN
+from models.loss import CTCFocalLoss
 # from models.resnet import resnet18
 
 
-def eval_ctc(model, dataloader, char_set):
+def eval_ctc(model, dataloader, idx2char):
     model.eval()
     t = time.time()
     total_dist = 0
@@ -27,25 +28,26 @@ def eval_ctc(model, dataloader, char_set):
     total_label_char = 0
     total_samples = 0
     total_ned = 0
+
     for j, batch in enumerate(dataloader):
         imgs = batch[0].cuda()
         labels = batch[1].cuda().long()
-        labels_str = batch[3]
         labels_length = batch[2]
+        labels_str = batch[3]
 
         with torch.no_grad():
             outputs = model(imgs)
 
-        prob = outputs.softmax(dim=2).cpu()
-        pred = prob.max(dim=2)[1]
+        prob = outputs.softmax(dim=2).cpu().numpy()
+        pred = prob.argmax(axis=2)
 
-        for k in range(pred.size(1)):
+        for k in range(pred.shape[1]):
             pred_str = ""
             prev = " "
             for t in pred[:,k]:
-                if char_set[t] != prev:
-                    pred_str += char_set[t]
-                    prev = char_set[t]
+                if idx2char[t] != prev:
+                    pred_str += idx2char[t]
+                    prev = idx2char[t]
             
             pred_str = pred_str.strip()
             pred_str = pred_str.replace('-', '')
@@ -60,8 +62,12 @@ def eval_ctc(model, dataloader, char_set):
             total_label_char += len(labels_str[k])
             total_samples += 1
 
-            if dist != 0: total_line_err += 1
-
+            if dist != 0: 
+                total_line_err += 1
+                if k == 0:
+                    print('pred: ', pred_str)
+                    print('label:', labels_str[k])
+                    
     precision = 1.0 - float(total_dist) / total_pred_char
     recall = 1.0 - float(total_dist) / total_label_char
     ave_Levenshtein_ratio = float(total_ratio) / total_samples
@@ -91,12 +97,12 @@ def eval_attention(model, dataloader, idx2char):
         labels_str = batch[3]
 
         with torch.no_grad():
+
             probs = model(imgs, labels, teacher_forcing_ratio=0)
 
-        # prob = outputs.softmax(dim=2).cpu()
-        probs = probs.cpu().numpy()
-        # print(probs.shape)
-        pred = np.argmax(probs, axis=2)
+
+        prob = outputs.softmax(dim=2).cpu().numpy()
+        pred = prob.argmax(axis=2)
 
         for k in range(pred.shape[1]):
             pred_str = ""
@@ -144,13 +150,16 @@ def main():
     torch.backends.cudnn.benchmark = True
 
     char_set = config['char_set']
-    char2idx, idx2char = get_char_dict(char_set)
+    if config['method'] == 'ctc':
+        char2idx, idx2char = get_char_dict_ctc(char_set)
+    else:
+        char2idx, idx2char = get_char_dict_attention(char_set)
+
     config['char2idx'] = char2idx
     config['idx2char'] = idx2char
     batch_size = config['batch_size']
 
     print(config)
-
 
     train_dataset = TextRecDataset(config, phase='train')
     val_dataset = TextRecDataset(config, phase='val')
@@ -173,22 +182,25 @@ def main():
                                  num_workers=cpu_count(),
                                  pin_memory=False)
 
-    # class_num not include 'sos' and 'eos' and 'pad'
-    class_num = len(config['char_set'])
+    class_num = len(config['char_set']) + 1
     print('class_num', class_num)
-    model = CRNN(class_num=class_num+1, char2idx=char2idx)
-    # criterion = nn.CTCLoss(blank=len(config['char_set'])-1, reduction='mean')
-    criterion = nn.CrossEntropyLoss(reduction='none')
+    model = CRNN(class_num=class_num, char2idx=char2idx)
+    if config['method'] == 'ctc':
+        # criterion = nn.CTCLoss(blank=char2idx['-'], reduction='mean')
+        criterion = CTCFocalLoss(blank=char2idx['-'], gamma=0.5)
+
+    else:
+        criterion = nn.CrossEntropyLoss(reduction='none')
 
     model = model.cuda()
-    # summary(model, (1, 32, 400))
+    summary(model, (1, 32, 400))
 
     # model = torch.nn.DataParallel(model)
 
     # optimizer = torch.optim.Adam([{'params': model.parameters()}], lr=1e-2, weight_decay=5e-4)
     optimizer = torch.optim.SGD([{'params': model.parameters()}], lr=0.001, momentum=0.9, weight_decay=5e-4)
 
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[1000, 1500], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[500, 800], gamma=0.1)
 
     print('train start, total batches %d' % len(trainloader))
     iter_cnt = 0
@@ -200,55 +212,48 @@ def main():
             iter_cnt += 1
             imgs = batch[0].cuda()
             labels = batch[1].cuda().long()
-            labels_length = batch[2]
+            labels_length = batch[2].cuda()
             labels_mask = batch[4].cuda().float()
-            # imgs = batch[0]
-            # labels = batch[1].long()
-            # labels_length = batch[2]
-            # labels_mask = batch[4].float()
 
-
-            # print(labels)
-
-            outputs = model(imgs, labels)
-
-            # CTC loss
-            # log_prob = outputs.log_softmax(dim=2)
-            # t,n,c = log_prob.size(0),log_prob.size(1),log_prob.size(2)
-            # input_length = (torch.ones((n,)) * t).cuda().int()
-            # loss = criterion(log_prob, labels, input_length, labels_length)
-
-            # cross_entropy loss
-            # print(outputs.size(), labels.size())
-            outputs = outputs.permute(1, 2, 0)
-            # print(labels[0], outputs[0], labels_mask[0])
-            losses = criterion(outputs, labels)
-            losses = losses * labels_mask
-            loss = losses.sum() / labels_mask.sum()
-            # print('loss:', loss, "labels_mask", labels_mask.sum())
-
-            # print(labels)
-            # print(outputs, outputs.size())
-            # print(labels_mask)
+            if config['method'] == 'ctc':
+                # CTC loss
+                outputs = model(imgs)
+                log_prob = outputs.log_softmax(dim=2)
+                t,n,c = log_prob.size(0),log_prob.size(1),log_prob.size(2)
+                input_length = (torch.ones((n,)) * t).cuda().int()
+                loss = criterion(log_prob, labels, input_length, labels_length)
+            else:
+                # cross_entropy loss
+                outputs = model(imgs, labels)
+                outputs = outputs.permute(1, 2, 0)
+                losses = criterion(outputs, labels)
+                losses = losses * labels_mask
+                loss = losses.sum() / labels_mask.sum()
 
             optimizer.zero_grad()            
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
+            # nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
             optimizer.step()
 
             if iter_cnt % config['print_freq'] == 0:
-                # trainloader.set_description('train loss %f' %(loss.item()))
                 print('epoch %d, iter %d, train loss %f' % (i + 1, iter_cnt, loss.item()))
+
         print('epoch %d, time %f' % (i + 1, (time.time() - start)))
         scheduler.step()
 
         print("validating...")
-        eval_attention(model, valloader, idx2char)
+        
+        if config['method'] == 'ctc':
+            eval_ctc(model, valloader, idx2char)
+        else:
+            eval_attention(model, valloader, idx2char)
 
         if (i + 1) % config['test_freq'] == 0:
             print("testing...")
-            eval_attention(model, testloader, idx2char)
-
+            if config['method'] == 'ctc':
+                eval_ctc(model, testloader, idx2char)
+            else:
+                eval_attention(model, testloader, idx2char)
         # # if (i + 1) % config['save_freq'] == 0:
         #     save_model(config['save_path'], i + 1, model, optimizer=optimizer)
 
