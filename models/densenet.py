@@ -4,12 +4,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as cp
 from collections import OrderedDict
-from .utils import load_state_dict_from_url
+# from .utils import load_state_dict_from_url
 from torch import Tensor
 from torch.jit.annotations import List
 
 
-__all__ = ['DenseNet', 'densenet121', 'densenet169', 'densenet201', 'densenet161']
+__all__ = ['DenseNetBackbone', 'densenet121', 'densenet169', 'densenet201', 'densenet161','densenet18']
 
 model_urls = {
     'densenet121': 'https://download.pytorch.org/models/densenet121-a639ec97.pth',
@@ -122,6 +122,14 @@ class _Transition(nn.Sequential):
                                           kernel_size=1, stride=1, bias=False))
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
+class _Transition_keep_width(nn.Sequential):
+    def __init__(self, num_input_features, num_output_features):
+        super(_Transition_keep_width, self).__init__()
+        self.add_module('norm', nn.BatchNorm2d(num_input_features))
+        self.add_module('relu', nn.ReLU(inplace=True))
+        self.add_module('conv', nn.Conv2d(num_input_features, num_output_features,
+                                          kernel_size=1, stride=1, bias=False))
+        self.add_module('pool', nn.AvgPool2d(kernel_size=(2,1), stride=(2,1)))
 
 class DenseNet(nn.Module):
     r"""Densenet-BC model class, based on
@@ -146,7 +154,7 @@ class DenseNet(nn.Module):
 
         # First convolution
         self.features = nn.Sequential(OrderedDict([
-            ('conv0', nn.Conv2d(3, num_init_features, kernel_size=7, stride=2,
+            ('conv0', nn.Conv2d(1, num_init_features, kernel_size=7, stride=1,
                                 padding=3, bias=False)),
             ('norm0', nn.BatchNorm2d(num_init_features)),
             ('relu0', nn.ReLU(inplace=True)),
@@ -166,17 +174,22 @@ class DenseNet(nn.Module):
             )
             self.features.add_module('denseblock%d' % (i + 1), block)
             num_features = num_features + num_layers * growth_rate
-            if i != len(block_config) - 1:
-                trans = _Transition(num_input_features=num_features,
-                                    num_output_features=num_features // 2)
-                self.features.add_module('transition%d' % (i + 1), trans)
-                num_features = num_features // 2
+            # if i != len(block_config) - 1:
+            # if i == 0:
+            #     trans = _Transition(num_input_features=num_features,
+            #                         num_output_features=num_features // 2)
+            # else:
+            trans = _Transition_keep_width(num_input_features=num_features,
+                                               num_output_features=num_features // 2)
+
+            self.features.add_module('transition%d' % (i + 1), trans)
+            num_features = num_features // 2
 
         # Final batch norm
         self.features.add_module('norm5', nn.BatchNorm2d(num_features))
 
         # Linear layer
-        self.classifier = nn.Linear(num_features, num_classes)
+        # self.classifier = nn.Linear(num_features, num_classes)
 
         # Official init from torch repo.
         for m in self.modules():
@@ -191,9 +204,9 @@ class DenseNet(nn.Module):
     def forward(self, x):
         features = self.features(x)
         out = F.relu(features, inplace=True)
-        out = F.adaptive_avg_pool2d(out, (1, 1))
-        out = torch.flatten(out, 1)
-        out = self.classifier(out)
+        # out = F.adaptive_avg_pool2d(out, (1, 1))
+        # out = torch.flatten(out, 1)
+        # out = self.classifier(out)
         return out
 
 
@@ -221,6 +234,19 @@ def _densenet(arch, growth_rate, block_config, num_init_features, pretrained, pr
     if pretrained:
         _load_state_dict(model, model_urls[arch], progress)
     return model
+
+def densenet18(pretrained=False, progress=True, **kwargs):
+    r"""Densenet-121 model from
+    `"Densely Connected Convolutional Networks" <https://arxiv.org/pdf/1608.06993.pdf>`_
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+        memory_efficient (bool) - If True, uses checkpointing. Much more memory efficient,
+          but slower. Default: *False*. See `"paper" <https://arxiv.org/pdf/1707.06990.pdf>`_
+    """
+    return _densenet('densenet18', 32, (2, 2, 2, 4), 64, pretrained, progress,
+                     **kwargs)
 
 
 def densenet121(pretrained=False, progress=True, **kwargs):

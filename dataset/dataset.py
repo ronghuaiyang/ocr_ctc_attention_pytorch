@@ -61,12 +61,15 @@ class TextRecDataset(data.Dataset):
         self.labels_str = [] 
         self.labels_length = []
         self.load_annotation_file()
-        if config['method'] == 'ctc':
-            self.labels, self.labels_mask = self.label_process_ctc()
-        else:
-            self.labels, self.labels_mask = self.label_process_attention()
+        # if config['method'] == 'ctc':
+        #     self.labels, self.labels_mask = self.label_process_ctc()
+        # else:
+        #     self.labels, self.labels_mask = self.label_process_attention()
+        self.labels_ctc, self.labels_ctc_mask = self.label_process_ctc()
+        self.labels_att, self.labels_att_mask = self.label_process_attention()
 
-        self.idx = list(range(len(self.labels)))
+
+        self.idx = list(range(len(self.labels_ctc)))
         np.random.seed(10101)
         np.random.shuffle(self.idx)
         np.random.seed(None)
@@ -110,10 +113,14 @@ class TextRecDataset(data.Dataset):
         idx = self.idx[index]
 
         img_file = self.img_paths[idx]
-        label = self.labels[idx]
         label_length = self.labels_length[idx]
         label_str = self.labels_str[idx]
-        label_mask = self.labels_mask[idx]
+
+        label_ctc = self.labels_ctc[idx]
+        label_att = self.labels_att[idx]
+
+        label_ctc_mask = self.labels_ctc_mask[idx]
+        label_att_mask = self.labels_att_mask[idx]
 
         assert len(label_str) == label_length
 
@@ -121,7 +128,7 @@ class TextRecDataset(data.Dataset):
 
         img = self.transform(Image.fromarray(np.uint8(img)).convert('L'))
 
-        return img, label, label_length, label_str, label_mask
+        return img, label_length, label_str, label_ctc, label_ctc_mask, label_att, label_att_mask
 
     def __len__(self):
         return len(self.idx)
@@ -144,7 +151,7 @@ class TextRecDataset(data.Dataset):
 
     def label_process_ctc(self):
         max_string_len = self.config['max_string_len']
-        char2idx = self.config['char2idx']
+        char2idx = self.config['char2idx_ctc']
         processed_label = []
         labels_mask = []
         for label in self.labels_str:
@@ -169,7 +176,7 @@ class TextRecDataset(data.Dataset):
     # use attention
     def label_process_attention(self):
         max_string_len = self.config['max_string_len']
-        char2idx = self.config['char2idx']
+        char2idx = self.config['char2idx_att']
         processed_label = []
         labels_mask = []
         for label in self.labels_str:
